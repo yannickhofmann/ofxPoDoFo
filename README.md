@@ -91,9 +91,7 @@ chmod +x build_podofo.sh
  
 ### Build and Run the Example
 
-Once the static PoDoFo library is compiled you can build and run the example project.
-
-Navigate into the example folder:
+Once the static PoDoFo library is compiled you can build and run the example project. The example does not include a Makefile. Generate the project using the openFrameworks Project Generator as usual. Then navigate into the example folder:
 
 ```bash
 cd example
