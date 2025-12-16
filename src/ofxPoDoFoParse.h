@@ -1,6 +1,7 @@
 #pragma once
 
 #include "podofo.h"
+#include <podofo/main/PdfContentStreamReader.h>
 #include "ofPath.h"
 
 namespace ofx { namespace podofo {
@@ -16,7 +17,7 @@ public:
 		Context();
 		ofPath getClippedPath() const;
 	};
-	std::vector<ofPath> parse(PoDoFo::PdfContentsTokenizer *tokenizer, Parser::Context context=Parser::Context());
+	std::vector<ofPath> parse(PoDoFo::PdfContentStreamReader &reader, Parser::Context context=Parser::Context());
 };
 class Extractor {
 public:

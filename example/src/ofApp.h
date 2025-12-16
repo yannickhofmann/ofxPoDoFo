@@ -23,4 +23,5 @@ public:
 	void gotMessage(ofMessage msg);
 private:
 	ofxPoDoFo doc_;
+	int page_ = 0;
 };

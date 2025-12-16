@@ -1,0 +1,9 @@
+linux:
+
+sudo apt-get install libxml2-dev libfreetype6-dev libfontconfig1-dev libpng-dev libjpeg-dev libtiff-dev zlib1g-dev libssl-dev
+    
+    
+osx:
+
+brew install libxml2 freetype fontconfig libpng jpeg libtiff openssl@3
+

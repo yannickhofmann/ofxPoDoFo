@@ -3,7 +3,7 @@
 //--------------------------------------------------------------
 void ofApp::setup(){
 //	ofSetLogLevel(OF_LOG_VERBOSE);
-	doc_.load("tiger.pdf");
+	doc_.load("ofBook.pdf");
 }
 
 //--------------------------------------------------------------
@@ -13,12 +13,18 @@ void ofApp::update(){
 
 //--------------------------------------------------------------
 void ofApp::draw(){
-	doc_.draw();
+	ofBackground(255);
+	doc_.drawPage(page_);
+	ofDrawBitmapStringHighlight("Page " + ofToString(page_+1) + " / " + ofToString(doc_.pageCount()), 15, 20);
 }
 
 //--------------------------------------------------------------
 void ofApp::keyPressed(int key){
-
+	if(key == OF_KEY_LEFT) {
+		page_ = std::max(0, page_-1);
+	} else if(key == OF_KEY_RIGHT) {
+		page_ = std::min<int>(doc_.pageCount() > 0 ? doc_.pageCount()-1 : 0, page_+1);
+	}
 }
 
 //--------------------------------------------------------------

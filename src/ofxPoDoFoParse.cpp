@@ -9,18 +9,17 @@ namespace {
 	std::string print(const PoDoFo::PdfVariant &var) {
 		std::string ss;
 		switch(var.GetDataType()) {
-			case ePdfDataType_Bool:			ss = std::string() + "bool: " + (var.GetBool()?"true":"false"); break;
-			case ePdfDataType_Number:		ss = std::string() + "number: " + ofToString(var.GetNumber()); break;
-			case ePdfDataType_Real:			ss = std::string() + "real: " + ofToString(var.GetReal()); break;
-			case ePdfDataType_String:
-			case ePdfDataType_HexString:	ss = std::string() + "string: " + var.GetString().GetString(); break;
-			case ePdfDataType_Name:			ss = std::string() + "name: " + var.GetName().GetName(); break;
-			case ePdfDataType_Array:
-			case ePdfDataType_Dictionary:
-			case ePdfDataType_Null:
-			case ePdfDataType_Reference:
-			case ePdfDataType_RawData:
-			case ePdfDataType_Unknown: ss = "unhandled"; break;
+			case PdfDataType::Bool:       ss = std::string() + "bool: " + (var.GetBool()?"true":"false"); break;
+			case PdfDataType::Number:     ss = std::string() + "number: " + ofToString(var.GetNumber()); break;
+			case PdfDataType::Real:       ss = std::string() + "real: " + ofToString(var.GetReal()); break;
+			case PdfDataType::String:     ss = std::string() + "string: " + std::string(var.GetString().GetString()); break;
+			case PdfDataType::Name:       ss = std::string() + "name: " + std::string(var.GetName().GetString()); break;
+			case PdfDataType::Array:
+			case PdfDataType::Dictionary:
+			case PdfDataType::Null:
+			case PdfDataType::Reference:
+			case PdfDataType::RawData:
+			case PdfDataType::Unknown: ss = "unhandled"; break;
 		}
 		return ss;
 	}
@@ -304,18 +303,18 @@ ofPath Parser::Context::getClippedPath() const
 	const float upscale = 1000000;
 	c.scale(upscale, upscale);
 	p.scale(upscale, upscale);
-	ofxClipper clipper;
-	clipper.addPath(c, OFX_CLIPPER_CLIP);
-	clipper.addPath(p, OFX_CLIPPER_SUBJECT);
-	std::vector<ofPolyline> polys;
-	clipper.clip(OFX_CLIPPER_INTERSECTION, polys);
-	ofPath ret = path;
+	ofx::Clipper clipper;
+	// Clipper throws if open paths are added while open paths are disabled.
+	// Auto-close here so we can safely intersect even if the PDF path didn't end with 'h'.
+	clipper.addPath(c, ClipperLib::PolyType::ptClip, true);
+	clipper.addPath(p, ClipperLib::PolyType::ptSubject, true);
+		std::vector<ofPolyline> polys = clipper.getClipped(ClipperLib::ClipType::ctIntersection);	ofPath ret = path;
 	ret.clear();
 	for(auto &&poly : polys) {
 		if(poly.size() < 2) continue;
 		poly.scale(1/upscale, 1/upscale);
 		ret.moveTo(poly[0]);
-		for(int i = 1; i < poly.size(); ++i) {
+		for(size_t i = 1; i < poly.size(); ++i) {
 			ret.lineTo(poly[i]);
 		}
 		auto &&commands = path.getCommands();
@@ -326,90 +325,89 @@ ofPath Parser::Context::getClippedPath() const
 	return ret;
 }
 
-std::vector<ofPath> Parser::parse(PdfContentsTokenizer *tokenizer, Parser::Context context)
+std::vector<ofPath> Parser::parse(PoDoFo::PdfContentStreamReader &reader, Parser::Context context)
 {
 	std::vector<ofPath> ret;
-	const char *token = NULL;
-	EPdfContentsType type;
-	PdfVariant var;
+	PoDoFo::PdfContent content;
 	std::vector<PoDoFo::PdfVariant> vars;
 
-	while(tokenizer->ReadNext(type, token, var))
+	while(reader.TryReadNext(content))
 	{
-		bool escape = false;
-		switch(type) {
-			case ePdfContentsType_Keyword: {
-				if(false) {}
-				else if(Ignore("j").extract(token, context, vars)) {}
-				else if(Ignore("J").extract(token, context, vars)) {}
-				else if(Ignore("M").extract(token, context, vars)) {}
-				else if(Ignore("d").extract(token, context, vars)) {}
-				else if(Ignore("ri").extract(token, context, vars)) {}
-				else if(Ignore("i").extract(token, context, vars)) {}
-				else if(Ignore("MP").extract(token, context, vars)) {}
-				else if(Ignore("DP").extract(token, context, vars)) {}
-				else if(Ignore("BMC").extract(token, context, vars)) {}
-				else if(Ignore("BDC").extract(token, context, vars)) {}
-				else if(Ignore("EMC").extract(token, context, vars)) {}
-				
-				else if(ShouldHandle("cs").extract(token, context, vars)) {}
-				else if(ShouldHandle("CS").extract(token, context, vars)) {}
-				else if(ShouldHandle("gs").extract(token, context, vars)) {}
-				
-				else if(BeginGroup("q").extract(token, context, vars)) {
-					auto &&paths = parse(tokenizer, context);
-					ret.insert(end(ret), begin(paths), end(paths));
-				}
-				else if(EndGroup("Q").extract(token, context, vars)) {
-					escape = true;
-				}
-				else if(AffineTransform("cm").extract(token, context, vars)) {}
-				else if(MoveTo("m").extract(token, context, vars)) {}
-				else if(LineTo("l").extract(token, context, vars)) {}
-				else if(BezierTo("c").extract(token, context, vars)) {}
-				else if(EaseInTo("y").extract(token, context, vars)) {}
-				else if(EaseOutTo("v").extract(token, context, vars)) {}
-				else if(Rectangle("re").extract(token, context, vars)) {}
-				else if(Close("h").extract(token, context, vars)) {}
-				else if(StrokeWidth("w").extract(token, context, vars)) {}
-				else if(StrokeWidth("LW").extract(token, context, vars)) {}
-				else if(StrokeColor("G").extract(token, context, vars)) {}
-				else if(StrokeColor("RG").extract(token, context, vars)) {}
-				else if(StrokeColor("SCN").extract(token, context, vars)) {}
-				else if(FillColor("g").extract(token, context, vars)) {}
-				else if(FillColor("rg").extract(token, context, vars)) {}
-				else if(FillColor("scn").extract(token, context, vars)) {}
-				else if(Clipping("W", OF_POLY_WINDING_NONZERO, true).extract(token, context, vars)) {}
-				else if(Clipping("W*", OF_POLY_WINDING_ODD, true).extract(token, context, vars)) {}
-				else if(Stroke("s", OF_POLY_WINDING_ODD, true).extract(token, context, vars) ||
-						Stroke("S", OF_POLY_WINDING_ODD, false).extract(token, context, vars) ||
-						Fill("f", OF_POLY_WINDING_NONZERO, true).extract(token, context, vars) ||
-						Fill("f*", OF_POLY_WINDING_ODD, true).extract(token, context, vars) ||
-						StrokeFill("b", OF_POLY_WINDING_NONZERO, true).extract(token, context, vars) ||
-						StrokeFill("b*", OF_POLY_WINDING_ODD, true).extract(token, context, vars) ||
-						StrokeFill("B", OF_POLY_WINDING_NONZERO, false).extract(token, context, vars) ||
-						StrokeFill("B*", OF_POLY_WINDING_ODD, false).extract(token, context, vars) ||
-						NoDraw("n", OF_POLY_WINDING_NONZERO, true).extract(token, context, vars)
-						)
-				{
-					ret.push_back(context.clipping_enabled ? context.getClippedPath(): context.path);
-					context.path.clear();
-				}
-				else if(Any(token).extract(token, context, vars)) {}
-				else {
-					ofLogError("ofxPoDoFoParser") << "something is wrong";
-				}
-				vars.clear();
-			}	break;
-			case ePdfContentsType_Variant: {
-				vars.push_back(var);
-			}	break;
-			case ePdfContentsType_ImageData: {
-			}	break;
-			default:
-				PODOFO_RAISE_ERROR(ePdfError_InternalLogic);
-				break;
+		if(content.GetType() != PoDoFo::PdfContentType::Operator) {
+			continue;
 		}
+		const std::string token(content.GetKeyword());
+		const auto &stack = content.GetStack();
+		vars.clear();
+		vars.reserve(stack.size());
+		// Preserve PDF operand order (first read -> first element)
+		for(auto it = stack.rbegin(); it != stack.rend(); ++it) {
+			vars.push_back(*it);
+		}
+
+		bool escape = false;
+		const char *tok = token.c_str();
+		if(false) {}
+		else if(Ignore("j").extract(tok, context, vars)) {}
+		else if(Ignore("J").extract(tok, context, vars)) {}
+		else if(Ignore("M").extract(tok, context, vars)) {}
+		else if(Ignore("d").extract(tok, context, vars)) {}
+		else if(Ignore("ri").extract(tok, context, vars)) {}
+		else if(Ignore("i").extract(tok, context, vars)) {}
+		else if(Ignore("MP").extract(tok, context, vars)) {}
+		else if(Ignore("DP").extract(tok, context, vars)) {}
+		else if(Ignore("BMC").extract(tok, context, vars)) {}
+		else if(Ignore("BDC").extract(tok, context, vars)) {}
+		else if(Ignore("EMC").extract(tok, context, vars)) {}
+
+		else if(ShouldHandle("cs").extract(tok, context, vars)) {}
+		else if(ShouldHandle("CS").extract(tok, context, vars)) {}
+		else if(ShouldHandle("gs").extract(tok, context, vars)) {}
+
+		else if(BeginGroup("q").extract(tok, context, vars)) {
+			auto &&paths = parse(reader, context);
+			ret.insert(end(ret), begin(paths), end(paths));
+		}
+		else if(EndGroup("Q").extract(tok, context, vars)) {
+			escape = true;
+		}
+		else if(AffineTransform("cm").extract(tok, context, vars)) {}
+		else if(MoveTo("m").extract(tok, context, vars)) {}
+		else if(LineTo("l").extract(tok, context, vars)) {}
+		else if(BezierTo("c").extract(tok, context, vars)) {}
+		else if(EaseInTo("y").extract(tok, context, vars)) {}
+		else if(EaseOutTo("v").extract(tok, context, vars)) {}
+		else if(Rectangle("re").extract(tok, context, vars)) {}
+		else if(Close("h").extract(tok, context, vars)) {}
+		else if(StrokeWidth("w").extract(tok, context, vars)) {}
+		else if(StrokeWidth("LW").extract(tok, context, vars)) {}
+		else if(StrokeColor("G").extract(tok, context, vars)) {}
+		else if(StrokeColor("RG").extract(tok, context, vars)) {}
+		else if(StrokeColor("SCN").extract(tok, context, vars)) {}
+		else if(FillColor("g").extract(tok, context, vars)) {}
+		else if(FillColor("rg").extract(tok, context, vars)) {}
+		else if(FillColor("scn").extract(tok, context, vars)) {}
+		else if(Clipping("W", OF_POLY_WINDING_NONZERO, true).extract(tok, context, vars)) {}
+		else if(Clipping("W*", OF_POLY_WINDING_ODD, true).extract(tok, context, vars)) {}
+		else if(Stroke("s", OF_POLY_WINDING_ODD, true).extract(tok, context, vars) ||
+				Stroke("S", OF_POLY_WINDING_ODD, false).extract(tok, context, vars) ||
+				Fill("f", OF_POLY_WINDING_NONZERO, true).extract(tok, context, vars) ||
+				Fill("f*", OF_POLY_WINDING_ODD, true).extract(tok, context, vars) ||
+				StrokeFill("b", OF_POLY_WINDING_NONZERO, true).extract(tok, context, vars) ||
+				StrokeFill("b*", OF_POLY_WINDING_ODD, true).extract(tok, context, vars) ||
+				StrokeFill("B", OF_POLY_WINDING_NONZERO, false).extract(tok, context, vars) ||
+				StrokeFill("B*", OF_POLY_WINDING_ODD, false).extract(tok, context, vars) ||
+				NoDraw("n", OF_POLY_WINDING_NONZERO, true).extract(tok, context, vars)
+				)
+		{
+			ret.push_back(context.clipping_enabled ? context.getClippedPath(): context.path);
+			context.path.clear();
+		}
+		else if(Any(token).extract(tok, context, vars)) {}
+		else {
+			ofLogError("ofxPoDoFoParser") << "something is wrong";
+		}
+		vars.clear();
 		if(escape) {
 			break;
 		}

@@ -1,3 +1,7 @@
+Linux/Ubuntu port and example updates by Yannick Hofmann.
+
+---
+
 ofxPoDoFo/COPYING
 
 MIT License
