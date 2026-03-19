@@ -43,36 +43,41 @@ bool Document::load(const std::string &filepath) {
 	auto count = pages.GetCount();
 	page_.resize(count);
 	for(unsigned i = 0; i < count; ++i) {
-		auto &page = pages.GetPageAt(i);
-		PoDoFo::PdfContentStreamReader reader(page);
-		parse::Parser::Context context;
-		auto rect = page.GetRect();
-		float top = rect.GetBottom() + rect.Height;
-		context.mat[1][1] = -1;
-		context.mat[3][1] = top;
-		auto paths = parse::Parser().parse(reader, context);
-		for(auto &&path : paths) {
-			page_[i].addPath(path);
-		}
-
-		// Text: use PoDoFo extraction (position only) and render at a fixed size.
-		std::vector<PoDoFo::PdfTextEntry> entries;
-		page.ExtractTextTo(entries);
-		for(const auto &entry : entries) {
-			Page::TextEntry text;
-			text.text = entry.Text;
-			text.pos = {static_cast<float>(entry.X), static_cast<float>(top - entry.Y)};
-			if(entry.BoundingBox.has_value()) {
-				auto r = entry.BoundingBox.value();
-				text.bbox = ofRectangle(
-					static_cast<float>(r.X),
-					static_cast<float>(top - (r.Y + r.Height)),
-					static_cast<float>(r.Width),
-					static_cast<float>(r.Height));
-				text.has_bbox = true;
+		try {
+			auto &page = pages.GetPageAt(i);
+			PoDoFo::PdfContentStreamReader reader(page);
+			parse::Parser::Context context;
+			auto rect = page.GetRect();
+			float top = rect.GetBottom() + rect.Height;
+			context.mat[1][1] = -1;
+			context.mat[3][1] = top;
+			auto paths = parse::Parser().parse(reader, context);
+			for(auto &&path : paths) {
+				page_[i].addPath(path);
 			}
-			text.size = baseFontSize_;
-			page_[i].addText(text);
+
+			// Text: use PoDoFo extraction (position only) and render at a fixed size.
+			std::vector<PoDoFo::PdfTextEntry> entries;
+			page.ExtractTextTo(entries);
+			for(const auto &entry : entries) {
+				Page::TextEntry text;
+				text.text = entry.Text;
+				text.pos = {static_cast<float>(entry.X), static_cast<float>(top - entry.Y)};
+				if(entry.BoundingBox.has_value()) {
+					auto r = entry.BoundingBox.value();
+					text.bbox = ofRectangle(
+						static_cast<float>(r.X),
+						static_cast<float>(top - (r.Y + r.Height)),
+						static_cast<float>(r.Width),
+						static_cast<float>(r.Height));
+					text.has_bbox = true;
+				}
+				text.size = baseFontSize_;
+				page_[i].addText(text);
+			}
+		} catch(const PoDoFo::PdfError &err) {
+			ofLogWarning("ofxPoDoFo") << "Skipping PDF page " << i
+				<< " due to parse/extract error: " << err.what();
 		}
 	}
 

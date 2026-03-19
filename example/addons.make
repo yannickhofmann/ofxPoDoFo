@@ -1,4 +1,2 @@
 ofxClipper
-ofxClipper
-ofxPoDoFo
 ofxPoDoFo

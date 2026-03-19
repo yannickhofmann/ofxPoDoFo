@@ -11,6 +11,41 @@ command_exists() {
 	command -v "$1" >/dev/null 2>&1
 }
 
+verify_static_archive_arch() {
+	local archive="$1"
+	local expected="$2"
+
+	if [[ ! -f "$archive" ]]; then
+		echo "Error: missing archive ${archive}" >&2
+		exit 1
+	fi
+
+	local first_obj
+	first_obj="$(ar t "$archive" | grep -v '^__.SYMDEF' | grep -v '^/$' | head -n 1 || true)"
+	if [[ -z "$first_obj" ]]; then
+		echo "Error: archive has no object members: ${archive}" >&2
+		exit 1
+	fi
+
+	local tmp_dir
+	tmp_dir="$(mktemp -d)"
+	cp "$archive" "$tmp_dir/archive.a"
+	(
+		cd "$tmp_dir"
+		ar -x archive.a "$first_obj"
+	)
+	local info
+	info="$(file "$tmp_dir/$first_obj")"
+	rm -rf "$tmp_dir"
+
+	if [[ "$info" != *"$expected"* ]]; then
+		echo "Error: architecture mismatch in ${archive}" >&2
+		echo "Expected token: ${expected}" >&2
+		echo "Actual: ${info}" >&2
+		exit 1
+	fi
+}
+
 # ----------------------------
 # Linux (Debian/Ubuntu)
 # ----------------------------
@@ -97,13 +132,35 @@ ADDON_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SRC_ROOT="${ADDON_ROOT}/scripts/podofo_src"
 
 unameOut="$(uname -s)"
+machineArch="$(uname -m)"
+COMPAT_LINUX_ALIAS=""
 case "${unameOut}" in
 	Darwin*)
 		ARCH="osx"
+		if [[ "$machineArch" == "arm64" || "$machineArch" == "aarch64" ]]; then
+			EXPECTED_ARCH_TOKEN="arm64"
+		else
+			EXPECTED_ARCH_TOKEN="x86_64"
+		fi
 		check_osx_deps
 		;;
 	Linux*)
-		ARCH="linux64"
+		case "${machineArch}" in
+			x86_64|amd64)
+				ARCH="linux64"
+				EXPECTED_ARCH_TOKEN="x86-64"
+				;;
+			arm64|aarch64)
+				ARCH="linuxaarch64"
+				EXPECTED_ARCH_TOKEN="ARM aarch64"
+				# Keep existing linux64 layout populated for addons still referencing it.
+				COMPAT_LINUX_ALIAS="linux64"
+				;;
+			*)
+				echo "Unsupported Linux architecture: ${machineArch}" >&2
+				exit 1
+				;;
+		esac
 		check_linux_deps
 		;;
 	*)
@@ -194,13 +251,19 @@ fi
 # Configure
 # ----------------------------
 echo "==> Configuring (arch: ${ARCH})"
-cmake -S "${SRC_DIR}" -B "${BUILD_DIR}" \
-	-DCMAKE_BUILD_TYPE=Release \
-	-DPODOFO_BUILD_STATIC=ON \
-	-DPODOFO_BUILD_EXAMPLES=OFF \
-	-DPODOFO_BUILD_TEST=OFF \
-	-DCMAKE_INSTALL_PREFIX="${INSTALL_DIR}" \
-	-DCMAKE_OSX_DEPLOYMENT_TARGET=13.2
+cmake_args=(
+	-DCMAKE_BUILD_TYPE=Release
+	-DPODOFO_BUILD_STATIC=ON
+	-DPODOFO_BUILD_EXAMPLES=OFF
+	-DPODOFO_BUILD_TEST=OFF
+	-DCMAKE_INSTALL_PREFIX="${INSTALL_DIR}"
+)
+
+if [[ "${ARCH}" == "osx" ]]; then
+	cmake_args+=(-DCMAKE_OSX_DEPLOYMENT_TARGET=13.2)
+fi
+
+cmake -S "${SRC_DIR}" -B "${BUILD_DIR}" "${cmake_args[@]}"
 
 # ----------------------------
 # Build & install
@@ -227,6 +290,21 @@ cp -R "${INSTALL_INCLUDE}" "${DEST_INCLUDE}"
 
 find "${DEST_LIB}" -maxdepth 1 -type f -name 'libpodofo*' -delete || true
 cp "${INSTALL_LIB}"/libpodofo*.a "${DEST_LIB}/"
+
+for lib in "${DEST_LIB}"/libpodofo*.a; do
+	verify_static_archive_arch "${lib}" "${EXPECTED_ARCH_TOKEN}"
+done
+
+if [[ -n "${COMPAT_LINUX_ALIAS}" ]]; then
+	COMPAT_INSTALL_DIR="${ADDON_ROOT}/libs/PoDoFo/install/${COMPAT_LINUX_ALIAS}"
+	COMPAT_DEST_LIB="${ADDON_ROOT}/libs/PoDoFo/lib/${COMPAT_LINUX_ALIAS}"
+	mkdir -p "${COMPAT_INSTALL_DIR}/lib" "${COMPAT_DEST_LIB}"
+	find "${COMPAT_INSTALL_DIR}/lib" -maxdepth 1 -type f -name 'libpodofo*' -delete || true
+	find "${COMPAT_DEST_LIB}" -maxdepth 1 -type f -name 'libpodofo*' -delete || true
+	cp "${INSTALL_LIB}"/libpodofo*.a "${COMPAT_INSTALL_DIR}/lib/"
+	cp "${INSTALL_LIB}"/libpodofo*.a "${COMPAT_DEST_LIB}/"
+	echo "==> Synced ARM64 PoDoFo libs to compatibility path: ${COMPAT_LINUX_ALIAS}"
+fi
 
 # ----------------------------
 # Cleanup
