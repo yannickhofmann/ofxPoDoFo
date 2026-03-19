@@ -11,9 +11,9 @@ This makes it possible to load and display PDF documents in openFrameworks. This
 
 This fork of ofxPoDoFo has been validated on:
 
-*   Ubuntu 24.04.3 LTS
+*   x86_64 (Ubuntu 24.04.3 LTS, Debian 12 & 13)
+*   ARM 64-bit (Raspberry Pi)
 *   macOS (Apple Silicon M2)
-*   ARM 64-bit (Raspberry Pi OS/Linux aarch64)
 *   openFrameworks:
     *   `of_v0.12.0_linux64gcc6_release`
     *   `of_v0.12.1_linux64_gcc6_release`
